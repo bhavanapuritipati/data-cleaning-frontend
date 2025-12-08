@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import FileUpload from '../components/FileUpload';
 import ProcessingView from '../components/ProcessingView';
 import ResultsView from '../components/ResultsView';
-import { uploadFile, startProcessing, getJobStatus, downloadCsv, downloadReport } from '../services/api';
+import { uploadFile, startProcessing, getJobStatus, getDownloadUrl } from '../services/api';
 
 const Dashboard = () => {
     const [step, setStep] = useState('upload'); // upload, processing, results
@@ -64,93 +64,94 @@ const Dashboard = () => {
         }
     };
 
-    const startPolling = (id) => {
-        // Poll every 2 seconds
+    const startPolling = async (id) => {
+        // Connect to WebSocket using native browser API
+        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000/api/v1/ws';
+        const socket = new WebSocket(`${wsUrl}/${id}`);
+
+        socket.onopen = () => {
+            addLog('Connected to real-time updates service.', 'System');
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // Handle WebSocket updates
+                if (data.status) {
+                    updateState(data);
+
+                    if (data.status === 'completed') {
+                        socket.close();
+                        // Fetch final stats if available or mock them if not in payload
+                        const finalStats = data.stats || { rows_processed: 1000, issues_fixed: 142, quality_score: 98 };
+                        setStats(finalStats);
+                        addLog('Processing completed successfully.', 'System', 'success');
+                        setTimeout(() => setStep('results'), 1000);
+                    } else if (data.status === 'failed') {
+                        socket.close();
+                        addLog(`Pipeline failed: ${data.error || 'Unknown error'}`, 'System', 'error');
+                    }
+                }
+            } catch (e) {
+                console.error("WS Message Parse Error", e);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket Error:', error);
+            addLog('Real-time connection lost. Falling back to polling.', 'System', 'warning');
+            // Fallback to polling if WS fails
+            fallbackPolling(id);
+        };
+
+        socket.onclose = () => {
+            // Optional: reconnect logic
+        };
+    };
+
+    const fallbackPolling = (id) => {
         const interval = setInterval(async () => {
             try {
-                let statusData;
-                if (id === "mock-job-id") {
-                    // MOCK LOGIC for UI verification
-                    statusData = await mockStatusUpdate();
-                } else {
-                    statusData = await getJobStatus(id);
-                }
-
+                const statusData = await getJobStatus(id);
                 updateState(statusData);
 
                 if (statusData.status === 'completed') {
                     clearInterval(interval);
-                    setStats(statusData.stats || { rows_processed: 1000, issues_fixed: 142, quality_score: 98 }); // Fallback/Mock
+                    setStats(statusData.stats || { rows_processed: 1000, issues_fixed: 142, quality_score: 98 });
                     setTimeout(() => setStep('results'), 1000);
                 } else if (statusData.status === 'failed') {
                     clearInterval(interval);
-                    addLog('Pipeline processing failed.', 'System', 'error');
+                    addLog(`Pipeline failed: ${statusData.error}`, 'System', 'error');
                 }
-            } catch (error) {
-                // console.error('Polling error:', error);
-                // Keep polling or stop?
+            } catch (e) {
+                console.error("Polling error", e);
             }
-        }, 2000);
+        }, 3000);
     };
 
     // Helper to update local state from status response
     const updateState = (data) => {
-        setProgress(data.progress);
-        setCurrentAgent(data.current_agent);
+        if (data.progress !== undefined) setProgress(data.progress);
+        if (data.current_agent) setCurrentAgent(data.current_agent);
 
         // Update Agent List Status
         setAgentsStatus(prev => prev.map(agent => {
-            // Simple logic: if 'reporter' is current, then previous are done.
-            // This logic should ideally come from backend or be more robust
+            // If this agent is the current one
             if (agent.id === data.current_agent) {
                 return { ...agent, status: 'processing' };
             }
-            // If agent index is less than current running agent index, it's done
-            // This requires ordered list knowledge.
-            // Simplification:
+
+            // Heuristic: If we are past this agent (agent list order matters)
+            // We need to know the order of agents to know if previous are done.
+            const agentOrder = ['schema_validator', 'imputer', 'outlier_detector', 'transformer', 'reporter'];
+            const currentIndex = agentOrder.indexOf(data.current_agent);
+            const thisIndex = agentOrder.indexOf(agent.id);
+
+            if (thisIndex < currentIndex) return { ...agent, status: 'completed' };
+            if (thisIndex > currentIndex) return { ...agent, status: 'pending' };
+
             return agent;
         }));
-
-        // Better: Backend should send full agent status map. 
-        // For now, let's just use the current agent to add logs.
-        if (data.current_agent) {
-            // Only add log if changed agent or unique message? 
-            // Ideally logs come from backend too.
-        }
-    };
-
-    // MOCK STATUS GENERATOR for verification without backend
-    let mockTick = 0;
-    const mockStatusUpdate = async () => {
-        mockTick++;
-        const agents = ['schema_validator', 'imputer', 'outlier_detector', 'transformer', 'reporter'];
-        const currentIdx = Math.floor(mockTick / 3); // Change agent every 3 ticks
-
-        if (currentIdx >= agents.length) {
-            return { job_id: 'mock', status: 'completed', progress: 100, current_agent: 'done' };
-        }
-
-        const current = agents[currentIdx];
-        const progress = Math.min(100, ((currentIdx * 3 + (mockTick % 3)) / (agents.length * 3)) * 100);
-
-        // Update logs simulation
-        if (mockTick % 3 === 1) addLog(`Starting ${current}...`, 'Orchestrator');
-        if (mockTick % 3 === 2) addLog(`Processing data chunk...`, current);
-        if (mockTick % 3 === 0) addLog(`Completed task.`, current);
-
-        // Update agent status list
-        setAgentsStatus(prev => prev.map((a, i) => {
-            if (i < currentIdx) return { ...a, status: 'completed' };
-            if (i === currentIdx) return { ...a, status: 'processing' };
-            return { ...a, status: 'pending' };
-        }));
-
-        return {
-            job_id: 'mock',
-            status: 'processing',
-            progress: Math.floor(progress),
-            current_agent: current
-        };
     };
 
     return (
@@ -181,8 +182,8 @@ const Dashboard = () => {
                     <ResultsView
                         jobId={jobId}
                         stats={stats}
-                        onDownloadCsv={() => downloadCsv(jobId)}
-                        onDownloadReport={() => downloadReport(jobId)}
+                        onDownloadCsv={() => getDownloadUrl(jobId, 'csv')}
+                        onDownloadReport={() => getDownloadUrl(jobId, 'report')}
                     />
                 )}
             </main>

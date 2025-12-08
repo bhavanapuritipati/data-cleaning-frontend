@@ -22,7 +22,7 @@ const ResultsView = ({ jobId, stats, onDownloadCsv, onDownloadReport }) => {
                 <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={onDownloadCsv}
+                    onClick={() => window.open(onDownloadCsv(), '_blank')}
                     className="flex flex-col items-center justify-center p-8 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all group"
                 >
                     <div className="p-4 bg-blue-50 text-blue-600 rounded-full mb-4 group-hover:bg-blue-100">
@@ -35,7 +35,7 @@ const ResultsView = ({ jobId, stats, onDownloadCsv, onDownloadReport }) => {
                 <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={onDownloadReport}
+                    onClick={() => window.open(onDownloadReport(), '_blank')}
                     className="flex flex-col items-center justify-center p-8 bg-white border border-gray-200 rounded-xl hover:border-purple-500 hover:shadow-md transition-all group"
                 >
                     <div className="p-4 bg-purple-50 text-purple-600 rounded-full mb-4 group-hover:bg-purple-100">

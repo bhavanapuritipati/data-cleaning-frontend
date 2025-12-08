@@ -1,18 +1,23 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
-export const api = axios.create({
-    baseURL: API_URL,
+const api = axios.create({
+    baseURL: API_BASE_URL,
     headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': 'application/json',
     },
 });
 
 export const uploadFile = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await api.post('/upload', formData);
+
+    const response = await api.post('/upload', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
     return response.data;
 };
 
@@ -26,10 +31,13 @@ export const getJobStatus = async (jobId) => {
     return response.data;
 };
 
-export const downloadCsv = (jobId) => {
-    window.open(`${API_URL}/download/${jobId}/csv`, '_blank');
+export const getDownloadUrl = (jobId, type = 'csv') => {
+    return `${API_BASE_URL}/download/${jobId}/${type}`;
 };
 
-export const downloadReport = (jobId) => {
-    window.open(`${API_URL}/download/${jobId}/report`, '_blank');
-};
+export const getReport = async (jobId) => {
+    const response = await api.get(`/download/${jobId}/report`);
+    return response.data;
+}
+
+export default api;
