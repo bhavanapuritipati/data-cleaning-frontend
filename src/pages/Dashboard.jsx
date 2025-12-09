@@ -33,33 +33,21 @@ const Dashboard = () => {
             setStep('processing');
             addLog(`Uploading file: ${file.name}`, 'System');
 
-            // Allow simulation for UI testing if backend is offline
-            // remove this in production or make robust
-            let id;
-            try {
-                const response = await uploadFile(file);
-                id = response.job_id;
-            } catch (e) {
-                console.error("Upload failed (backend likely offline), using mock job_id");
-                addLog('Backend unavailable. Demo mode active.', 'System', 'error');
-                id = "mock-job-id";
-            }
+            const response = await uploadFile(file);
+            const id = response.job_id;
 
             setJobId(id);
             addLog('File uploaded successfully. Initializing pipeline...', 'System');
 
             // Start Processing
-            try {
-                await startProcessing(id);
-            } catch (e) {
-                // Ignore error in demo mode
-            }
+            await startProcessing(id);
+            addLog('Processing started...', 'System');
 
             startPolling(id);
 
         } catch (error) {
             console.error('Upload failed:', error);
-            addLog('Upload failed. Please try again.', 'System', 'error');
+            addLog(`Upload failed: ${error.message || 'Please check if backend is running'}`, 'System', 'error');
             setStep('upload');
         }
     };
